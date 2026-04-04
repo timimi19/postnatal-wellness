@@ -14,37 +14,11 @@ import type { EmotionAnalysisResult } from "@/lib/aiPipeline";
 // Pipeline step labels shown during analysis
 // ───────────────────────────────────────────────
 const PIPELINE_STEPS = [
-  { id: 1, label: "GPT-4o-Transcribe", desc: "Transcribing audio…" },
-  { id: 2, label: "Wav2Vec 2.0", desc: "Extracting acoustic features…" },
-  { id: 3, label: "GPT-4o Multimodal", desc: "Analyzing emotion & context…" },
-  { id: 4, label: "RAG Engine", desc: "Generating personalized plan…" },
+  { id: 1, label: "GPT-4o-Transcribe", desc: "Converting speech to text (99 languages)…" },
+  { id: 2, label: "Wav2Vec 2.0",       desc: "Audio → emotion probabilities (HuggingFace)…" },
+  { id: 3, label: "BERT DistilRoBERTa",desc: "Text → emotion probabilities (HuggingFace)…" },
+  { id: 4, label: "Fusion + GPT-4o",   desc: "40% audio + 60% text → GPT-4o recommendations…" },
 ];
-
-// ───────────────────────────────────────────────
-// Estimate acoustic features from AudioContext
-// (browser-side proxy for Wav2Vec 2.0 output)
-// ───────────────────────────────────────────────
-async function getAcousticFeatures(blob: Blob) {
-  try {
-    const url = URL.createObjectURL(blob);
-    const ctx = new AudioContext();
-    const buf = await fetch(url).then((r) => r.arrayBuffer());
-    const decoded = await ctx.decodeAudioData(buf);
-    const data = decoded.getChannelData(0);
-    const rms = Math.sqrt(data.reduce((s, v) => s + v * v, 0) / data.length);
-    const energy = Math.min(10, Math.round(rms * 200));
-    let crossings = 0;
-    for (let i = 1; i < data.length; i++) {
-      if ((data[i] > 0) !== (data[i - 1] > 0)) crossings++;
-    }
-    const pitchVariance = Math.min(10, Math.round((crossings / data.length) * 800));
-    const speechRate = Math.min(10, Math.round((crossings / decoded.duration) * 0.05));
-    URL.revokeObjectURL(url);
-    return { energy, pitchVariance, speechRate };
-  } catch {
-    return { energy: 5, pitchVariance: 5, speechRate: 5 };
-  }
-}
 
 // ───────────────────────────────────────────────
 // Full pipeline: record → transcribe → analyze
@@ -109,26 +83,27 @@ export default function MoodPage() {
 
       try {
         // ── Step 1: GPT-4o-Transcribe ──────────────────
-        const formData = new FormData();
-        formData.append("audio", audioBlob, "recording.webm");
-        const transcribeRes = await fetch("/api/transcribe", { method: "POST", body: formData });
+        const transcribeForm = new FormData();
+        transcribeForm.append("audio", audioBlob, "recording.webm");
+        const transcribeRes = await fetch("/api/transcribe", { method: "POST", body: transcribeForm });
         const { transcript: rawText, demo } = await transcribeRes.json() as { transcript: string; demo?: boolean };
         const finalText = (!rawText || rawText === "__DEMO__")
           ? "I've been feeling really tired lately and overwhelmed"
           : rawText;
         setTranscript(finalText);
 
-        // ── Step 2: Wav2Vec 2.0 (acoustic features) ────
+        // ── Step 2: Wav2Vec 2.0 (audio emotion) ────────
+        // ── Step 3: BERT (text emotion) ────────────────
+        // Both run server-side; we pass audio + transcript together
         setPipelineStep(2);
-        const acousticFeatures = await getAcousticFeatures(audioBlob);
-
-        // ── Step 3: GPT-4o multimodal analysis ─────────
+        await new Promise((r) => setTimeout(r, 400)); // visual step indicator
         setPipelineStep(3);
-        const analyzeRes = await fetch("/api/analyze", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ transcript: finalText, acousticFeatures }),
-        });
+
+        // ── True Multimodal Fusion: send audio + transcript to /api/analyze ──
+        const analyzeForm = new FormData();
+        analyzeForm.append("audio", audioBlob, "recording.webm");
+        analyzeForm.append("transcript", finalText);
+        const analyzeRes = await fetch("/api/analyze", { method: "POST", body: analyzeForm });
         const analysis = await analyzeRes.json() as EmotionAnalysisResult;
 
         // ── Step 4: RAG personalised plan ──────────────
@@ -150,7 +125,7 @@ export default function MoodPage() {
         setResult(entry);
         setAnalysisResult(analysis);
         setHusbandRecs(analysis.husbandRecommendations);
-        setPipelineModel(demo ? "fallback" : analysis.pipeline);
+        setPipelineModel(analysis.pipeline === "multimodal" ? "gpt4o" : "fallback");
         setRecordingState("done");
       } catch (err) {
         console.error(err);
