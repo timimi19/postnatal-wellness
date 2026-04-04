@@ -29,6 +29,80 @@ const SCORE_OPTIONS = [
   { value: "3", label: "거의 매일" },
 ];
 
+const HUSBAND_QUESTIONS = [
+  {
+    question: "아내가 요즘 힘들다는 것을 얼마나 인식하고 있나요?",
+    emoji: "💡",
+    description: "솔직하게 선택해 주세요.",
+    options: [
+      "전혀 몰랐어요",
+      "어렴풋이 느끼고 있어요",
+      "알고 있지만 어떻게 해야 할지 모르겠어요",
+      "알고 있고 도우려 노력 중이에요",
+      "충분히 이해하고 함께 대처하고 있어요",
+    ],
+  },
+  {
+    question: "아내와 마지막으로 진심 어린 대화를 한 게 언제인가요?",
+    emoji: "💬",
+    description: "아기 얘기 말고, 아내 자신에 대한 대화 기준이에요.",
+    options: [
+      "기억이 잘 안 나요",
+      "일주일 이상 됐어요",
+      "며칠 전이에요",
+      "어제 또는 오늘이에요",
+      "매일 대화해요",
+    ],
+  },
+  {
+    question: "아내가 힘들다고 표현할 때 나의 반응은?",
+    emoji: "🤝",
+    description: "가장 솔직한 반응을 골라주세요.",
+    options: [
+      "대수롭지 않게 넘겼어요",
+      "듣긴 하는데 뭘 해야 할지 몰라요",
+      "공감하려 하지만 잘 안 돼요",
+      "위로의 말을 건네요",
+      "끝까지 듣고 함께 해결책을 찾아요",
+    ],
+  },
+  {
+    question: "최근 일주일간 아기 돌봄에 얼마나 참여했나요?",
+    emoji: "👶",
+    description: "목욕, 수유, 달래기, 재우기 등 포함해서요.",
+    options: [
+      "거의 아내가 전담했어요",
+      "가끔 도와줬어요 (부탁받을 때)",
+      "절반 정도 분담했어요",
+      "적극적으로 참여했어요",
+    ],
+  },
+  {
+    question: "집안일(청소·설거지·빨래 등)은 어떻게 하고 있나요?",
+    emoji: "🏠",
+    description: "최근 일주일 기준이에요.",
+    options: [
+      "거의 아내가 해요",
+      "부탁받으면 해요",
+      "내가 먼저 나서서 하는 편이에요",
+      "역할을 명확히 나눠서 하고 있어요",
+    ],
+  },
+  {
+    question: "아내를 위해 의식적으로 하고 있는 것이 있나요?",
+    emoji: "💙",
+    description: "해당하는 것을 모두 골라주세요.",
+    options: [
+      "퇴근 후 바로 집에 와요",
+      "먼저 말을 걸어줘요",
+      "칭찬이나 감사 표현을 해요",
+      "아내 혼자만의 시간을 만들어줘요",
+      "아직 특별히 하는 게 없어요",
+    ],
+    multi: true,
+  },
+];
+
 interface WifeNeedsState {
   emotionState: string;
   husbandTalkFreq: string;
@@ -193,7 +267,6 @@ function generateWifePlan(needs: WifeNeedsState, phqScore: number): WellnessPlan
   };
 }
 
-  // 힘든 순간 기반 (구 코드 제거됨)
 export default function OnboardingPage() {
   const router = useRouter();
   const { setUser, setOnboardingStep, user } = useAppStore();
@@ -209,7 +282,11 @@ export default function OnboardingPage() {
     discomfortThings: [],
     wishFromHusband: [],
   });
-  const [husbandNeeds, setHusbandNeeds] = useState<string[]>([]);
+  const [husbandQuizStep, setHusbandQuizStep] = useState(0);
+  const [husbandAnswers, setHusbandAnswers] = useState<(string | string[])[]>(
+    Array(HUSBAND_QUESTIONS.length).fill(null)
+  );
+  const [husbandMultiSelected, setHusbandMultiSelected] = useState<string[]>([]);
   const [generatedPlan, setGeneratedPlan] = useState<WellnessPlan | null>(null);
 
   const progress = ((step + 1) / STEPS.length) * 100;
@@ -223,6 +300,7 @@ export default function OnboardingPage() {
 
   const handleConsent = () => setStep(2);
 
+  // PHQ-9 (아내)
   const handlePhqAnswer = (score: number) => {
     const updated = [...phqAnswers];
     updated[currentQuestion] = score;
@@ -232,6 +310,48 @@ export default function OnboardingPage() {
     } else {
       setStep(3);
     }
+  };
+
+  // 남편 자가진단
+  const handleHusbandSingle = (value: string) => {
+    const updated = [...husbandAnswers];
+    updated[husbandQuizStep] = value;
+    setHusbandAnswers(updated);
+    if (husbandQuizStep < HUSBAND_QUESTIONS.length - 1) {
+      setHusbandQuizStep((s) => s + 1);
+      setHusbandMultiSelected([]);
+    } else {
+      setStep(3);
+    }
+  };
+
+  const handleHusbandMultiNext = () => {
+    const updated = [...husbandAnswers];
+    updated[husbandQuizStep] = husbandMultiSelected;
+    setHusbandAnswers(updated);
+
+    // 자가진단 답변 기반 플랜 생성 후 바로 step 4로
+    const answers = updated;
+    const dailyGoals: string[] = ["아내에게 먼저 말 걸기 💬"];
+    if (typeof answers[0] === "string" && (answers[0].includes("전혀") || answers[0].includes("어렴풋"))) {
+      dailyGoals.push("산후우울증 정보 1가지 읽어보기");
+    }
+    if (typeof answers[1] === "string" && (answers[1].includes("기억") || answers[1].includes("일주일"))) {
+      dailyGoals.push("오늘 퇴근 후 아내에게 \"오늘 어땠어?\" 물어보기");
+    }
+    if (typeof answers[3] === "string" && answers[3].includes("전담")) {
+      dailyGoals.push("오늘 아기 돌봄 한 가지 자발적으로 하기");
+    }
+    if (typeof answers[4] === "string" && answers[4].includes("아내가")) {
+      dailyGoals.push("집에 오면 설거지 또는 청소 한 가지 먼저 하기");
+    }
+    const plan: WellnessPlan = {
+      dailyGoals: [...new Set(dailyGoals)],
+      weeklyCheckIn: "매주 일요일 저녁 커플 감정 체크인",
+      partnerTasks: ["아내 감정 기록 확인하기", "집안일 역할 나누기", "아내 자유 시간 만들어주기"],
+    };
+    setGeneratedPlan(plan);
+    setStep(4);
   };
 
   const currentWifeQ = WIFE_NEEDS_QUESTIONS[wifeNeedsStep];
@@ -271,10 +391,31 @@ export default function OnboardingPage() {
   };
 
   const handleNeedsSubmit = () => {
+    // 남편 자가진단 답변 기반 플랜 생성
+    const answers = husbandAnswers;
+    const dailyGoals: string[] = ["아내에게 먼저 말 걸기 💬"];
+
+    // Q1: 아내 상태 인식
+    if (typeof answers[0] === "string" && (answers[0].includes("전혀") || answers[0].includes("어렴풋"))) {
+      dailyGoals.push("산후우울증 정보 1가지 읽어보기");
+    }
+    // Q2: 대화 빈도
+    if (typeof answers[1] === "string" && (answers[1].includes("기억") || answers[1].includes("일주일"))) {
+      dailyGoals.push("오늘 퇴근 후 아내에게 \"오늘 어땠어?\" 물어보기");
+    }
+    // Q4: 아기 돌봄
+    if (typeof answers[3] === "string" && answers[3].includes("전담")) {
+      dailyGoals.push("오늘 아기 돌봄 한 가지 자발적으로 하기");
+    }
+    // Q5: 집안일
+    if (typeof answers[4] === "string" && answers[4].includes("아내가")) {
+      dailyGoals.push("집에 오면 설거지 또는 청소 한 가지 먼저 하기");
+    }
+
     const plan: WellnessPlan = {
-      dailyGoals: ["아내에게 먼저 말 걸기", "집안일 하나 도맡기", "퇴근 후 5분 경청"],
+      dailyGoals: [...new Set(dailyGoals)],
       weeklyCheckIn: "매주 일요일 저녁 커플 감정 체크인",
-      partnerTasks: husbandNeeds,
+      partnerTasks: ["아내 감정 기록 확인하기", "집안일 역할 나누기", "아내 자유 시간 만들어주기"],
     };
     setGeneratedPlan(plan);
     setStep(4);
@@ -351,8 +492,8 @@ export default function OnboardingPage() {
           </Card>
         )}
 
-        {/* Step 2: PHQ-9 자가 진단 */}
-        {step === 2 && (
+        {/* Step 2: 아내 - PHQ-9 자가 진단 / 남편 - 관계·노력도 자가진단 */}
+        {step === 2 && role === "wife" && (
           <Card>
             <CardHeader>
               <CardTitle>
@@ -364,7 +505,9 @@ export default function OnboardingPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <p className="font-medium text-gray-800">{PHQ9_QUESTIONS[currentQuestion]}</p>
+              {/* key를 currentQuestion으로 설정해 질문 바뀔 때 RadioGroup 초기화 */}
               <RadioGroup
+                key={currentQuestion}
                 onValueChange={(v) => handlePhqAnswer(Number(v))}
                 className="space-y-2"
               >
@@ -378,6 +521,65 @@ export default function OnboardingPage() {
             </CardContent>
           </Card>
         )}
+
+        {step === 2 && role === "husband" && (() => {
+          const q = HUSBAND_QUESTIONS[husbandQuizStep];
+          const isMulti = !!q.multi;
+          return (
+            <Card>
+              <CardHeader>
+                <CardTitle>
+                  {q.emoji} {q.question}
+                </CardTitle>
+                <CardDescription>
+                  ({husbandQuizStep + 1}/{HUSBAND_QUESTIONS.length}) {q.description}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {!isMulti ? (
+                  q.options.map((opt) => (
+                    <Button
+                      key={opt}
+                      variant="outline"
+                      className="w-full justify-start hover:bg-blue-50 hover:border-blue-400 text-left h-auto py-3"
+                      onClick={() => handleHusbandSingle(opt)}
+                    >
+                      {opt}
+                    </Button>
+                  ))
+                ) : (
+                  <>
+                    <div className="flex flex-wrap gap-2">
+                      {q.options.map((opt) => (
+                        <button
+                          key={opt}
+                          onClick={() =>
+                            setHusbandMultiSelected((prev) =>
+                              prev.includes(opt) ? prev.filter((o) => o !== opt) : [...prev, opt]
+                            )
+                          }
+                          className={`px-3 py-2 rounded-xl text-sm border transition-colors text-left ${
+                            husbandMultiSelected.includes(opt)
+                              ? "bg-blue-500 text-white border-blue-500"
+                              : "bg-white text-gray-600 border-gray-200 hover:border-blue-300"
+                          }`}
+                        >
+                          {opt}
+                        </button>
+                      ))}
+                    </div>
+                    <Button
+                      className="w-full bg-blue-500 hover:bg-blue-600 text-white mt-2"
+                      onClick={handleHusbandMultiNext}
+                    >
+                      완료 ✓
+                    </Button>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          );
+        })()}
 
         {/* Step 3: 니즈 설문 - 아내 */}
         {step === 3 && role === "wife" && (
@@ -435,45 +637,8 @@ export default function OnboardingPage() {
           </Card>
         )}
 
-        {/* Step 3: 니즈 설문 - 남편 */}
-        {step === 3 && role === "husband" && (
-          <Card>
-            <CardHeader>
-              <CardTitle>니즈 설문 💬</CardTitle>
-              <CardDescription>아내를 어떻게 도와주고 싶으신가요? (해당 항목 모두 선택)</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {[
-                "아내 감정 상태 파악하기",
-                "집안일 더 많이 분담하기",
-                "아기 돌봄 역할 나누기",
-                "대화 시간 늘리기",
-                "전문가 상담 연결 도움주기",
-                "아내 혼자만의 시간 만들어주기",
-              ].map((need) => (
-                <Button
-                  key={need}
-                  variant={husbandNeeds.includes(need) ? "default" : "outline"}
-                  className={`w-full justify-start ${husbandNeeds.includes(need) ? "bg-blue-500 text-white" : ""}`}
-                  onClick={() =>
-                    setHusbandNeeds((prev) =>
-                      prev.includes(need) ? prev.filter((n) => n !== need) : [...prev, need]
-                    )
-                  }
-                >
-                  {need}
-                </Button>
-              ))}
-              <Button
-                className="w-full bg-blue-500 hover:bg-blue-600 text-white mt-2"
-                onClick={handleNeedsSubmit}
-                disabled={husbandNeeds.length === 0}
-              >
-                다음
-              </Button>
-            </CardContent>
-          </Card>
-        )}
+        {/* Step 3: 남편은 step 2에서 바로 step 4로 이동하므로 여기서 처리 불필요 */}
+        {step === 3 && role === "husband" && null}
 
         {/* Step 4: 플랜 생성 완료 */}
         {step === 4 && generatedPlan && (
