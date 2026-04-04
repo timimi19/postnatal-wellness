@@ -1,18 +1,18 @@
 /**
- * AI Pipeline — Postnatal Wellness  (2025 Multimodal Architecture)
+ * AI Pipeline — Postnatal Wellness  (Multimodal Architecture)
  *
- * Based on: "Depression detection methods based on multimodal fusion of
- * voice and text" (Nature Scientific Reports, 2025)
+ * Voice recording is analysed via TWO independent streams in parallel:
+ *  ┌── GPT-4o-Transcribe → text ──→ BERT DistilRoBERTa → text emotion probs
+ *  └── Wav2Vec 2.0 → audio waveform → audio emotion probs
+ *                                ↓
+ *                    Weighted Fusion (40% audio + 60% text)
+ *                    (catches what text alone misses: tremor, low energy, flat tone)
+ *                                ↓
+ *                    GPT-4o → recommendations only (classification already done)
  *
- *  1. STT      : GPT-4o-Transcribe        — multilingual, noise-robust
- *  2. Audio    : Wav2Vec 2.0 (HF API)    — raw waveform → emotion probabilities
- *  3. Text     : BERT/DistilRoBERTa (HF) — transcript → emotion probabilities
- *  4. Fusion   : Weighted merge 40/60    — audio + text → fused emotion vector
- *  5. LLM      : GPT-4o                  — recommendations ONLY (not classification)
- *  6. RAG      : Pinecone + history      — personalised long-term context
- *
- * Key distinction: GPT-4o is used for *recommendation generation*, NOT for
- * emotion detection — that is handled by the Wav2Vec + BERT fusion layer.
+ * Why multimodal matters here:
+ *  "I'm fine" (text = neutral) + trembling low-energy voice (Wav2Vec = sad)
+ *  → Fused result correctly identifies sadness  ← text alone would miss this
  */
 
 import OpenAI from "openai";
