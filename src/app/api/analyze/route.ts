@@ -17,19 +17,21 @@ import {
 } from "@/lib/aiPipeline";
 
 export async function POST(req: NextRequest) {
+  let transcript = "";
   try {
-    const formData   = await req.formData();
-    const transcript = formData.get("transcript") as string | null;
-    const phqScore   = Number(formData.get("phqScore") ?? -1);
-    const wifeNeeds  = formData.get("wifeNeeds") ? JSON.parse(formData.get("wifeNeeds") as string) : null;
-    const userPlan   = formData.get("userPlan")  ? JSON.parse(formData.get("userPlan")  as string) : null;
-    const role       = (formData.get("role") as string) ?? "wife";
+    const formData = await req.formData();
+    transcript     = (formData.get("transcript") as string | null) ?? "";
+    const phqScore = Number(formData.get("phqScore") ?? -1);
+    const wifeNeeds = formData.get("wifeNeeds") ? JSON.parse(formData.get("wifeNeeds") as string) : null;
+    const userPlan  = formData.get("userPlan")  ? JSON.parse(formData.get("userPlan")  as string) : null;
+    const role      = (formData.get("role") as string) ?? "wife";
 
     if (!transcript) {
       return NextResponse.json({ error: "No transcript provided" }, { status: 400 });
     }
 
     if (!process.env.GROQ_API_KEY) {
+      console.warn("[analyze] No GROQ_API_KEY — using fallback");
       return NextResponse.json(analyzeVoiceFallback(transcript));
     }
 
@@ -55,9 +57,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(result);
 
   } catch (err) {
-    console.error("[analyze]", err);
-    const formData   = await req.formData().catch(() => null);
-    const transcript = (formData?.get("transcript") as string) ?? "";
+    console.error("[analyze] error:", err);
+    // transcript is already captured above; fall back gracefully
     return NextResponse.json(analyzeVoiceFallback(transcript || "general fatigue"));
   }
 }
