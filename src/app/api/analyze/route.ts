@@ -8,6 +8,8 @@
  *  3. Groq LLaMA — personalized recommendations (survey + transcript)
  */
 import { NextRequest, NextResponse } from "next/server";
+
+export const maxDuration = 60; // Vercel: allow up to 60s for Groq LLaMA calls
 import {
   runGroqEmotion,
   fuseEmotions,

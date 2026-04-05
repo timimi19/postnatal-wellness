@@ -4,6 +4,8 @@
  * Falls back gracefully when GROQ_API_KEY is not set (demo mode)
  */
 import { NextRequest, NextResponse } from "next/server";
+
+export const maxDuration = 60; // Vercel: allow up to 60s for Whisper transcription
 import Groq from "groq-sdk";
 
 export async function POST(req: NextRequest) {
