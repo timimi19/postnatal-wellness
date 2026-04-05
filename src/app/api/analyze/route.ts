@@ -1,19 +1,15 @@
 /**
  * POST /api/analyze
- * FormData: { audio: File, transcript: string }
+ * FormData: { transcript, phqScore?, wifeNeeds?, userPlan?, role? }
  *
- * True Multimodal Pipeline:
- *  1. Wav2Vec 2.0  (HuggingFace) — audio  → emotion probabilities
- *  2. BERT         (HuggingFace) — text   → emotion probabilities
- *  3. Weighted Fusion            — 40% audio + 60% text
- *  4. GPT-4o                     — recommendations ONLY (not classification)
- *
- * Falls back to rule-based when API keys are absent.
+ * Pipeline:
+ *  1. Groq LLaMA — text → emotion probabilities
+ *  2. Depression score from emotion vector
+ *  3. Groq LLaMA — personalized recommendations (survey + transcript)
  */
 import { NextRequest, NextResponse } from "next/server";
 import {
-  runWav2Vec,
-  runBERT,
+  runGroqEmotion,
   fuseEmotions,
   generateRecommendations,
   analyzeVoiceFallback,
@@ -22,89 +18,47 @@ import {
 
 export async function POST(req: NextRequest) {
   try {
-    const formData  = await req.formData();
-    const audioFile = formData.get("audio")      as File   | null;
-    const transcript= formData.get("transcript") as string | null;
+    const formData   = await req.formData();
+    const transcript = formData.get("transcript") as string | null;
+    const phqScore   = Number(formData.get("phqScore") ?? -1);
+    const wifeNeeds  = formData.get("wifeNeeds") ? JSON.parse(formData.get("wifeNeeds") as string) : null;
+    const userPlan   = formData.get("userPlan")  ? JSON.parse(formData.get("userPlan")  as string) : null;
+    const role       = (formData.get("role") as string) ?? "wife";
 
     if (!transcript) {
       return NextResponse.json({ error: "No transcript provided" }, { status: 400 });
     }
 
-    const hasOpenAI = !!process.env.OPENAI_API_KEY;
-    const hasHF     = !!process.env.HUGGINGFACE_API_KEY;
-
-    // ── Fully featured: both APIs available ──────────────────────────
-    if (hasOpenAI && hasHF && audioFile) {
-      // Step 1: Wav2Vec 2.0 — audio emotion
-      const wav2vecScores = await runWav2Vec(audioFile);
-
-      // Step 2: BERT — text emotion (runs in parallel with Wav2Vec is fine,
-      //         but we need transcript which arrives with the request)
-      const bertScores = await runBERT(transcript);
-
-      // Step 3: Multimodal Fusion (40% audio + 60% text)
-      const fused = fuseEmotions(wav2vecScores, bertScores, 0.4, 0.6);
-
-      // Step 4: GPT-4o — recommendations only
-      const recs = await generateRecommendations(transcript, fused);
-
-      const result: EmotionAnalysisResult = {
-        depressionLevel:        fused.depressionLevel,
-        depressionScore:        fused.depressionScore,
-        primaryEmotion:         fused.dominantEmotion,
-        reasons:                recs.reasons,
-        wifeRecommendations:    recs.wifeRecs,
-        husbandRecommendations: recs.husbandRecs,
-        detectedLanguage:       recs.lang,
-        confidence:             fused.confidence,
-        pipeline:               "multimodal",
-        wav2vecEmotion:         wav2vecScores[0]?.label,
-        bertEmotion:            bertScores[0]?.label,
-        fusionWeights:          { audio: 0.4, text: 0.6 },
-      };
-
-      return NextResponse.json(result);
+    if (!process.env.GROQ_API_KEY) {
+      return NextResponse.json(analyzeVoiceFallback(transcript));
     }
 
-    // ── Text-only: OpenAI available but no HF / no audio ─────────────
-    if (hasOpenAI) {
-      // BERT only (no Wav2Vec)
-      const bertScores  = hasHF ? await runBERT(transcript) : [];
-      const bertMock    = [{ label: "neutral" as const, score: 1.0 }]; // neutral BERT placeholder
-      const wav2vecMock = [{ label: "neu"     as const, score: 1.0 }]; // neutral Wav2Vec placeholder
+    const neutralMock = [{ label: "neutral" as const, score: 1.0 }];
+    const groqScores  = await runGroqEmotion(transcript);
+    const fused       = fuseEmotions(groqScores, neutralMock, 1.0, 0.0);
+    const recs        = await generateRecommendations(transcript, fused, { phqScore, wifeNeeds, userPlan, role });
 
-      const fused = hasHF
-        ? fuseEmotions(wav2vecMock, bertScores, 0.0, 1.0)   // text-only weights
-        : fuseEmotions(wav2vecMock, bertMock,   0.5, 0.5);  // neutral placeholder
+    const result: EmotionAnalysisResult = {
+      depressionLevel:        fused.depressionLevel,
+      depressionScore:        fused.depressionScore,
+      primaryEmotion:         fused.dominantEmotion,
+      reasons:                recs.reasons,
+      wifeRecommendations:    recs.wifeRecs,
+      husbandRecommendations: recs.husbandRecs,
+      detectedLanguage:       recs.lang,
+      confidence:             fused.confidence,
+      pipeline:               "multimodal",
+      geminiEmotion:          groqScores[0]?.label,
+      fusionWeights:          { gemini: 1, bert: 0 },
+    };
 
-      const recs   = await generateRecommendations(transcript, fused);
-
-      const result: EmotionAnalysisResult = {
-        depressionLevel:        fused.depressionLevel,
-        depressionScore:        fused.depressionScore,
-        primaryEmotion:         fused.dominantEmotion,
-        reasons:                recs.reasons,
-        wifeRecommendations:    recs.wifeRecs,
-        husbandRecommendations: recs.husbandRecs,
-        detectedLanguage:       recs.lang,
-        confidence:             fused.confidence,
-        pipeline:               "text-only",
-        bertEmotion:            hasHF ? bertScores[0]?.label : undefined,
-        fusionWeights:          { audio: 0, text: 1 },
-      };
-
-      return NextResponse.json(result);
-    }
-
-    // ── No API keys: rule-based fallback ─────────────────────────────
-    const result = analyzeVoiceFallback(transcript);
     return NextResponse.json(result);
 
   } catch (err) {
     console.error("[analyze]", err);
-    // Always return usable result
     const formData   = await req.formData().catch(() => null);
     const transcript = (formData?.get("transcript") as string) ?? "";
     return NextResponse.json(analyzeVoiceFallback(transcript || "general fatigue"));
   }
 }
+

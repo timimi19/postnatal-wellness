@@ -1,10 +1,10 @@
 /**
  * POST /api/transcribe
- * Receives audio blob → GPT-4o-Transcribe → returns transcript text
- * Falls back gracefully when OPENAI_API_KEY is not set (demo mode)
+ * Receives audio blob → Groq Whisper → returns transcript text
+ * Falls back gracefully when GROQ_API_KEY is not set (demo mode)
  */
 import { NextRequest, NextResponse } from "next/server";
-import OpenAI from "openai";
+import Groq from "groq-sdk";
 
 export async function POST(req: NextRequest) {
   try {
@@ -15,22 +15,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No audio file provided" }, { status: 400 });
     }
 
-    if (!process.env.OPENAI_API_KEY) {
-      // Demo mode: return a placeholder so UI continues to work
+    if (!process.env.GROQ_API_KEY) {
       return NextResponse.json({ transcript: "__DEMO__", demo: true });
     }
 
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-    const response = await openai.audio.transcriptions.create({
-      model: "gpt-4o-transcribe",
+    const response = await groq.audio.transcriptions.create({
       file: audioFile,
+      model: "whisper-large-v3",
       response_format: "text",
     });
 
-    const transcript =
-      typeof response === "string" ? response : (response as { text: string }).text;
-
+    const transcript = typeof response === "string" ? response : (response as { text: string }).text;
     return NextResponse.json({ transcript });
   } catch (err) {
     console.error("[transcribe]", err);

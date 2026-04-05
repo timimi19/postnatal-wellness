@@ -6,6 +6,15 @@ export interface User {
   role: UserRole;
   partnerId?: string;
   plan?: WellnessPlan;
+  phqScore?: number;         // PHQ-9 총점 (아내)
+  wifeNeeds?: {
+    emotionState: string;
+    husbandTalkFreq: string;
+    comfortThings: string[];
+    discomfortThings: string[];
+    wishFromHusband: string[];
+  };
+  husbandAnswers?: string[]; // 남편 자가진단 답변
 }
 
 export interface MoodEntry {

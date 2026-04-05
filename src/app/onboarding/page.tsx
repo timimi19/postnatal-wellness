@@ -422,9 +422,16 @@ export default function OnboardingPage() {
   };
 
   const handleFinish = () => {
-    if (generatedPlan) {
-      setUser({ ...user!, plan: generatedPlan });
+    const updates: Partial<typeof user> = { plan: generatedPlan ?? undefined };
+    if (role === "wife") {
+      updates.phqScore  = phqTotal;
+      updates.wifeNeeds = wifeNeeds;
+    } else {
+      updates.husbandAnswers = husbandAnswers.map((a) =>
+        Array.isArray(a) ? a.join(", ") : (a ?? "")
+      );
     }
+    setUser({ ...user!, ...updates });
     setOnboardingStep(4);
     router.push("/dashboard");
   };

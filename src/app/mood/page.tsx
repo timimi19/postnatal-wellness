@@ -14,10 +14,10 @@ import type { EmotionAnalysisResult } from "@/lib/aiPipeline";
 // Pipeline step labels shown during analysis
 // ───────────────────────────────────────────────
 const PIPELINE_STEPS = [
-  { id: 1, label: "GPT-4o-Transcribe", desc: "Converting speech to text (99 languages)…" },
-  { id: 2, label: "Wav2Vec 2.0",       desc: "Audio → emotion probabilities (HuggingFace)…" },
-  { id: 3, label: "BERT DistilRoBERTa",desc: "Text → emotion probabilities (HuggingFace)…" },
-  { id: 4, label: "Fusion + GPT-4o",   desc: "40% audio + 60% text → GPT-4o recommendations…" },
+  { id: 1, label: "Groq Whisper",        desc: "Converting speech to text (99 languages)…" },
+  { id: 2, label: "Groq LLaMA",          desc: "Text → emotion probabilities (context-aware)…" },
+  { id: 3, label: "HuggingFace BERT",    desc: "Text → emotion probabilities (distilbert)…" },
+  { id: 4, label: "Fusion + LLaMA",      desc: "50% Groq + 50% BERT → personalized recommendations…" },
 ];
 
 // ───────────────────────────────────────────────
@@ -99,10 +99,13 @@ export default function MoodPage() {
         await new Promise((r) => setTimeout(r, 400)); // visual step indicator
         setPipelineStep(3);
 
-        // ── True Multimodal Fusion: send audio + transcript to /api/analyze ──
+        // ── Analyze: Groq emotion + personalized recommendations ──
         const analyzeForm = new FormData();
-        analyzeForm.append("audio", audioBlob, "recording.webm");
         analyzeForm.append("transcript", finalText);
+        if (user?.phqScore != null)  analyzeForm.append("phqScore",  String(user.phqScore));
+        if (user?.wifeNeeds)         analyzeForm.append("wifeNeeds", JSON.stringify(user.wifeNeeds));
+        if (user?.plan)              analyzeForm.append("userPlan",  JSON.stringify(user.plan));
+        if (user?.role)              analyzeForm.append("role",      user.role);
         const analyzeRes = await fetch("/api/analyze", { method: "POST", body: analyzeForm });
         const analysis = await analyzeRes.json() as EmotionAnalysisResult;
 
@@ -161,7 +164,7 @@ export default function MoodPage() {
                 ? "bg-purple-100 text-purple-700"
                 : "bg-gray-100 text-gray-500"}`}
             >
-              {pipelineModel === "gpt4o" ? "⚡ GPT-4o" : "Demo mode"}
+              {pipelineModel === "gpt4o" ? "⚡ Groq + BERT" : "Demo mode"}
             </Badge>
           </div>
 
